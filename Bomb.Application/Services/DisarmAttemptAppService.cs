@@ -1,5 +1,6 @@
 ﻿using Bomb.Application.Exceptions;
 using Bomb.Domain.Factories;
+using Bomb.Domain.Interfaces;
 using Bomb.Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -7,15 +8,66 @@ using System.Linq;
 
 namespace Bomb.Application.Interfaces
 {
-    public class DisarmeAttemptAppService : IDisarmeAttemptAppService
+    public class DisarmAttemptAppService : IDisarmAttemptAppService
     {
+        private readonly IDisarmAttemptRepository _disarmAttemptRepository;
+        public DisarmAttemptAppService(IDisarmAttemptRepository disarmAttemptRepository)
+        {
+            _disarmAttemptRepository = disarmAttemptRepository;
+        }
+
         public void TryDisarm(string wires)
         {
             var wireList = GetWireListFromString(wires);
-            
-            CutWires(wireList);
+            bool success = true;
+
+            try
+            {
+                CutWires(wireList);
+            }
+            catch (BombExplodedException)
+            {
+                success = false;
+                throw;
+            }
+            finally
+            {
+                SaveAttempt(wireList, success);
+            }
         }
 
+        public List<string> GetDisarmAttempts()
+        {
+            var result = new List<string>();
+            var attempts = _disarmAttemptRepository.GetDisarmAttempt().Result;
+
+            foreach (var attempt in attempts)
+            {
+                result.Add($"{attempt.Created} - "
+                           + string.Join(", ", attempt.CuttedWires.Select(p => p.ColorEnum))
+                           + (attempt.Success ? " - Bomba desarmada" : " - Bomba explodiu"));
+            }
+
+            return result;
+        }
+
+        public void SaveAttempt(List<Wire> wireList, bool success)
+        {
+            var attempt = new DisarmAttempt()
+            {
+                Success = success
+            };
+
+            foreach (var wire in wireList)
+            {
+                attempt.CuttedWires.Add(new CuttedWire()
+                {
+                    ColorEnum = wire.Color,
+                });
+            }
+
+            _disarmAttemptRepository.Add(attempt);
+        }
 
         private static void CutWires(List<Wire> wires)
         {
